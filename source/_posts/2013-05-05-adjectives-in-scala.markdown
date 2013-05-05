@@ -125,6 +125,7 @@ We can also add default reflection-based instantiation, making `BookBuilder` eve
     }
 
     object BookAdjectives extends Adjectives {
+      // same adjectives as before...
       implicit class BookBuilder(description: Adj[Book]) {
         def Book = description.build // available from NounBuilder
       }
