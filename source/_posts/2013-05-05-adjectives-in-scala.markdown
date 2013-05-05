@@ -40,15 +40,18 @@ At first I only considered case classes with default parameter values as candida
 An adjective can be described as a function from Noun to Noun: `type Adj[Noun] = Noun => Noun`.  
 A sequence of adjectives (disregarding English terminology...) can itself be regarded as an adjective by folding the adjectives over the noun. See the definition of `a` below:
 
+``` scala
     object Adjectives {
       type Adj[Noun] = Noun => Noun
       def a[Noun](description: Adj[Noun]*): Adj[Noun] = noun0 =>
         (noun0 /: description) { (noun, adjective) => adjective(noun) }
     }
     import Adjectives._
+```
 
 Let's now define the case class `Book` again, and add some adjectives:
 
+``` scala
     object Length extends Enumeration {
       type Length = Value
       val short, long = Value
@@ -66,9 +69,11 @@ Let's now define the case class `Book` again, and add some adjectives:
     import BookAdjectives._
     
     val book = a (long, interesting) (Book())
+```
     
 The `(Book())` at the end looks particularly awkward. This can be fixed by some additional boilerplate:
 
+``` scala
     import language.postfixOps
     
     object BookAdjectives {
@@ -78,11 +83,13 @@ The `(Book())` at the end looks particularly awkward. This can be fixed by some 
       }
     }
     import BookAdjectives._
+```
     
 Which allows us the nicer `val book = a (long, interesting) Book`.
 
 As I mentioned before, this could just as easily be generalized to, e.g., mutable classes with vars:
 
+``` scala
     class Book {
       var interesting: Boolean = _
       var length: Length = _
@@ -102,9 +109,11 @@ As I mentioned before, this could just as easily be generalized to, e.g., mutabl
     import BookAdjectives._
     
     val book = a (long, interesting) Book
+```
     
 We can also add default reflection-based instantiation, making `BookBuilder` even more brain-dead:
 
+``` scala
     import scala.reflect._
     
     trait Adjectives {
@@ -120,6 +129,7 @@ We can also add default reflection-based instantiation, making `BookBuilder` eve
         def Book = description.build // available from NounBuilder
       }
     }
+```
 
 Though I suspect I can just reify `def Book = new Book` and it will work for both cases (class Book, as well as case class Book with default parameters).
 
