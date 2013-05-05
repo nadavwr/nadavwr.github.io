@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: scala | Only Hunam]]></title>
+  <link href="http://nadavwr.github.io/blog/categories/scala/atom.xml" rel="self"/>
+  <link href="http://nadavwr.github.io/"/>
+  <updated>2013-05-05T06:48:27+03:00</updated>
+  <id>http://nadavwr.github.io/</id>
+  <author>
+    <name><![CDATA[Nadav Wiener]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Adjectives in Scala]]></title>
+    <link href="http://nadavwr.github.io/blog/2013/05/05/adjectives-in-scala/"/>
+    <updated>2013-05-05T05:59:00+03:00</updated>
+    <id>http://nadavwr.github.io/blog/2013/05/05/adjectives-in-scala</id>
+    <content type="html"><![CDATA[<p>Last year I had the pleasure of working a period of time for Yoav Hollander (creator of the <a href="http://en.wikipedia.org/wiki/E_%28verification_language%29">e verification language</a>). During that time, I came across a very nice piece of syntactic sugar in <em>e</em>. I don't recall how he used to call it, but I understood it as being all about extracting adjectives from a class, for unambiguous use during instance construction.</p>
+
+<p>I've had it in my mind to try to achieve something similar in Scala. Here is a contrived example in invalid Scala pseudo code:</p>
+
+<p>``` scala</p>
+
+<p>object Length extends Enumeration {
+  type Length = Value
+  val short, long = Value
+}
+import Length._</p>
+
+<p>class Book(interesting: Boolean = false, length: Length = short)</p>
+
+<p>val myBook: Book = a long interesting Book // &lt;-- this</p>
+
+<p>```</p>
+
+<p>This syntax could allow some very expressive code when modeling a domain using a few case classes. It could also be made to work well with default parameter values and monoidal zeros, for some additional conciseness.</p>
+
+<p>Notice that this has several requirements/limitations for the class being constructed:</p>
+
+<ol>
+<li>parameter-less instantiation, i.e.: zero-arg constructor, default parameter values, or a provided builder function</li>
+<li>no ambiguity -- adjectives can only be extracted if the can be uniquely associated with a single property of the class. (e.g., having two <code>Length</code> would prevent us from using <code>long</code> as an adjective)</li>
+</ol>
+
+
+<p>The pseudo code shown above is impossible to mimic directly in Scala, but I've been getting pretty close so far.</p>
+
+<p>I started out by trying to build the necessary boilerplate. In the future I hope to add macros for extracting adjectives from classes, which is what's needed to make this truly useful.</p>
+
+<p>At first I only considered case classes with default parameter values as candidates, but I later realized there's nothing to stop this from being applied to mutable classes (by extracting adjectives from e.g., vars, setters, parameterless mutators).</p>
+
+<p>An adjective can be described as a function from Noun to Noun: <code>type Adj[Noun] = Noun =&gt; Noun</code>.<br/>
+A sequence of adjectives (disregarding English terminology...) can itself be regarded as an adjective by folding the adjectives over the noun. See the definition of <code>a</code> below:</p>
+
+<p>``` scala</p>
+
+<pre><code>object Adjectives {
+  type Adj[Noun] = Noun =&gt; Noun
+  def a[Noun](description: Adj[Noun]*): Adj[Noun] = noun0 =&gt;
+    (noun0 /: description) { (noun, adjective) =&gt; adjective(noun) }
+}
+import Adjectives._
+</code></pre>
+
+<p>```</p>
+
+<p>Let's now define the case class <code>Book</code> again, and add some adjectives:</p>
+
+<p>``` scala</p>
+
+<pre><code>object Length extends Enumeration {
+  type Length = Value
+  val short, long = Value
+}
+import Length._
+
+case class Book(interesting: Boolean = false, length: Length = Length.short)
+
+// in the future I will want to derive these automatically using macros:
+object BookAdjectives {
+  def interesting: Adj[Book] = _.copy(interesting = true)
+  def long: Adj[Book] = _.copy(length = Length.long)
+  def short: Adj[Book] = _.copy(length = Length.short)
+}
+import BookAdjectives._
+
+val book = a (long, interesting) (Book())
+</code></pre>
+
+<p>```</p>
+
+<p>The <code>(Book())</code> at the end looks particularly awkward. This can be fixed by some additional boilerplate:</p>
+
+<p>``` scala</p>
+
+<pre><code>import language.postfixOps
+
+object BookAdjectives {
+  // ...skipping previous definitions
+  implicit class BookBuilder(description: Adj[Book]) {
+    def Book = description(Book())
+  }
+}
+import BookAdjectives._
+</code></pre>
+
+<p>```</p>
+
+<p>Which allows us the nicer <code>val book = a (long, interesting) Book</code>.</p>
+
+<p>As I mentioned before, this could just as easily be generalized to, e.g., mutable classes with vars:</p>
+
+<p>``` scala</p>
+
+<pre><code>class Book {
+  var interesting: Boolean = _
+  var length: Length = _
+}
+
+import Adjectives._ // same as above
+
+// I hope to also be able to generate these in the future
+object BookAdjectives {
+  def interesting: Adj[Book] = book =&gt; { book.interesting = true; book }
+  def long: Adj[Book] = book =&gt; { book.length = Length.long; book }
+  def short: Adj[Book] = book =&gt; { book.length = Length.short; book }
+  implicit class BookBuilder(description: Adj[Book]) {
+    def Book = description(new Book)
+  }
+}
+import BookAdjectives._
+
+val book = a (long, interesting) Book
+</code></pre>
+
+<p>```</p>
+
+<p>We can also add default reflection-based instantiation, making <code>BookBuilder</code> even more brain-dead:</p>
+
+<p>``` scala</p>
+
+<pre><code>import scala.reflect._
+
+trait Adjectives {
+  protected implicit class NounBuilder[Noun : ClassTag](description: Adj[Noun]) {
+    // TODO: should be made to also support case classes with default parameters
+    private def newInstance = implicitly[ClassTag[Noun]].runtimeClass.newInstance.asInstanceOf[Noun]
+    def build = description(newInstance)
+  }
+}
+
+object BookAdjectives extends Adjectives {
+  // same adjectives as before...
+  implicit class BookBuilder(description: Adj[Book]) {
+    def Book = description.build // available from NounBuilder
+  }
+}
+</code></pre>
+
+<p>```</p>
+
+<p>Though I suspect I can just reify <code>def Book = new Book</code> and it will work for both cases (class Book, as well as case class Book with default parameters).</p>
+
+<p>Next post on this subject will include some of the missing macro work.</p>
+]]></content>
+  </entry>
+  
+</feed>
